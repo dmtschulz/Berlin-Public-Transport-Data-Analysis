@@ -6,23 +6,28 @@ from pyspark.sql import SparkSession
 from pyspark.sql.types import StructType, StructField, StringType, TimestampType, BooleanType, FloatType, DateType
 from pyspark.sql import functions as F
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA_FOLDER = os.path.join(BASE_DIR, "dataset")
-OUTPUT_FOLDER = os.path.join(DATA_FOLDER, "parquet_out")
-
 # --- Configuration ---
-# Adjust memory if your local machine struggles with the volume
-from pyspark.sql import SparkSession
-
-spark = (
-    SparkSession.builder
-    .appName("BerlinTransportETL")
-    .master("local[*]")
-    .config("spark.driver.bindAddress", "127.0.0.1")
-    .config("spark.driver.host", "127.0.0.1")
-    .config("spark.driver.memory", "4g")
+spark = SparkSession.builder \
+    .appName("BerlinTransportETL") \
+    .config("spark.driver.memory", "4g") \
+    .master("local[*]") \
     .getOrCreate()
-)
+
+DATA_FOLDER = "dataset"
+OUTPUT_FOLDER = "dataset/parquet_out"
+
+# --- Station Name Mapping (Consistency with Task 1) ---
+MANUAL_XML_TO_JSON = {
+    "Berlin Attilastr.": "Attilastraße",
+    "Berlin Storkower Str": "Storkower Straße",
+    "Berlin Feuerbachstr.": "Feuerbachstraße",
+    "Berlin Poelchaustr.": "Poelchaustraße",
+    "Berlin Messe Nord/ZOB (Witzleben)": "Messe Nord / ZOB",
+    "Berlin Sundgauer Str": "Sundgauer Straße",
+    "Berlin Hbf": "Berlin Hauptbahnhof",
+    "Berlin Yorckstr.(S1)": "Yorckstraße",
+    "Berlin Yorckstr.(S2)": "Yorckstraße"
+}
 
 # --- Helper Functions (Run on Worker Nodes) ---
 
@@ -35,6 +40,12 @@ def parse_timestamp(ts_str):
     except ValueError:
         return None
 
+def normalize_station_name(raw_name):
+    """Applies manual overrides to match DB schema."""
+    if not raw_name:
+        return None
+    return MANUAL_XML_TO_JSON.get(raw_name, raw_name)
+
 def parse_xml_content(file_data):
     """
     Input: (filename, content_string)
@@ -45,11 +56,14 @@ def parse_xml_content(file_data):
     
     try:
         root = ET.fromstring(content)
-        station_name = root.attrib.get('station')
-        if not station_name:
+        raw_station_name = root.attrib.get('station')
+        if not raw_station_name:
             return []
 
-        # Determine file type based on filename suffix or content
+        # --- FIX: Normalize Name ---
+        station_name = normalize_station_name(raw_station_name)
+
+        # Determine file type based on filename suffix
         is_change_file = filename.endswith("_change.xml")
 
         for s_tag in root.findall('s'):
@@ -63,9 +77,6 @@ def parse_xml_content(file_data):
                 c = tl.attrib.get('c', 'Unknown')
                 n = tl.attrib.get('n', '0')
                 train_id = f"{c}-{n}"
-            
-            # We treat everything as a set of key-value pairs to merge later.
-            # Key: (station_name, stop_id, train_id, is_arrival)
             
             # --- ARRIVALS ---
             ar = s_tag.find('ar')
@@ -95,42 +106,33 @@ def parse_xml_content(file_data):
                     events.append(((station_name, stop_id, train_id, False), 
                                    {'planned_time': pt, 'type': 'plan'}))
                                    
-    except Exception as e:
+    except Exception:
         # Malformed XMLs are skipped
         pass
         
     return events
 
 def merge_events(a, b):
-    """
-    Reducer function to merge Planned and Update dictionaries.
-    """
-    # Merge dictionary 'b' into 'a'
+    """Reducer function to merge Planned and Update dictionaries."""
     merged = a.copy()
     merged.update(b)
-    # If we have both times, we keep both.
-    # The dictionary update naturally overrides old keys if they collide,
-    # but our keys (planned_time vs actual_time) are distinct.
     return merged
 
 # --- Main Pipeline ---
 
 if __name__ == "__main__":
-    print("🚀 Starting Spark ETL Job...")
+    print("🚀 Starting Spark ETL Job (With Name Normalization)...")
 
     # 1. Read Timetables (Planned)
-    # Using wholeTextFiles to read (filename, content) pairs
     planned_rdd = spark.sparkContext.wholeTextFiles(os.path.join(DATA_FOLDER, "timetables/*/*.xml"))
     
     # 2. Read Changes (Updates)
     changes_rdd = spark.sparkContext.wholeTextFiles(os.path.join(DATA_FOLDER, "timetable_changes/*/*.xml"))
 
     # 3. Union and Parse
-    # Result: RDD of (Key, Dict)
     all_raw_rdd = planned_rdd.union(changes_rdd).flatMap(parse_xml_content)
 
     # 4. Reduce / Merge
-    # Group by Unique Movement (Station, Stop, Train, Direction) and merge attributes
     merged_rdd = all_raw_rdd.reduceByKey(merge_events)
 
     # 5. Transform to Row format for DataFrame
@@ -147,7 +149,7 @@ if __name__ == "__main__":
             # Difference in seconds / 60
             delay = (at - pt).total_seconds() / 60.0
         
-        # Determine Date for Partitioning (Use Planned Time, fallback to Actual)
+        # Partition Date
         ref_time = pt if pt else at
         evt_date = ref_time.date() if ref_time else None
 

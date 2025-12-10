@@ -1,10 +1,12 @@
 import os
-import sys
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from pyspark.sql import SparkSession
 from pyspark.sql.types import StructType, StructField, StringType, TimestampType, BooleanType, FloatType, DateType
 from pyspark.sql import functions as F
+
+DATA_FOLDER = "dataset"
+OUTPUT_FOLDER = "dataset/parquet_out"
 
 # --- Configuration ---
 spark = SparkSession.builder \
@@ -12,9 +14,6 @@ spark = SparkSession.builder \
     .config("spark.driver.memory", "4g") \
     .master("local[*]") \
     .getOrCreate()
-
-DATA_FOLDER = "dataset"
-OUTPUT_FOLDER = "dataset/parquet_out"
 
 # --- Station Name Mapping (Consistency with Task 1) ---
 MANUAL_XML_TO_JSON = {

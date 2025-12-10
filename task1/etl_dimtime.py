@@ -1,8 +1,6 @@
 import pandas as pd
 from sqlalchemy import create_engine, text
 import numpy as np
-
-# Assuming connect_db.py exists and get_database_url() works
 from db_config import get_database_url
 
 DATABASE_URL = get_database_url()
@@ -32,17 +30,14 @@ def load_dim_time():
     df['day'] = df['datetime'].dt.day
     df['day_of_week'] = df['datetime'].dt.day_name()
     df['hour'] = df['datetime'].dt.hour
-    
-    # --- KEY CHANGE 2: Add minute and time_desc ---
     df['minute'] = df['datetime'].dt.minute
-    df['time_desc'] = df['datetime'].dt.strftime('%Y-%m-%d %H:%M')
     
     # Weekend: Saturday (5) or Sunday (6) in 0-indexed dayofweek
     df['is_weekend'] = df['datetime'].dt.dayofweek >= 5
 
-    # Peak hours: 07:00:00 to 08:59:59 AND 17:00:00 to 18:59:59
-    peak_morning = (df['hour'] >= 7) & (df['hour'] < 9)
-    peak_evening = (df['hour'] >= 17) & (df['hour'] < 19)
+    # Peak hours: 07:00:00 to 09:00:00 AND 17:00:00 to 19:00:00
+    peak_morning = (df['hour'] >= 7) & (df['hour'] <= 9)
+    peak_evening = (df['hour'] >= 17) & (df['hour'] <= 19)
     df['is_peak_hour'] = peak_morning | peak_evening
     
     # Resetting the sequential time_id if we want it to be a surrogate key starting from 1
@@ -53,7 +48,7 @@ def load_dim_time():
     # Select and reorder columns
     df_final = df[[
         # PK is SERIAL, so we can omit time_id here if preferred, but including it for clarity
-        'time_id', 'time_desc', 'date', 'year', 'month', 'day', 
+        'time_id', 'date', 'year', 'month', 'day', 
         'day_of_week', 'hour', 'minute', 'is_peak_hour', 'is_weekend'
     ]].copy()
     
@@ -73,7 +68,7 @@ def load_dim_time():
     try:
         engine = create_engine(DATABASE_URL)
         
-        # Ensure pg_trgm extension is active (for safety, though DimStation script handled it)
+        # Ensure pg_trgm extension is active
         with engine.begin() as conn:
             conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
             # Clear table before loading if we're generating all possible slots
@@ -94,7 +89,7 @@ def load_dim_time():
             
         print("\nPreview (first 5 records):")
         # Sample the DF to show the minute granularity
-        print(df_final.head()[['time_desc', 'day_of_week', 'hour', 'minute', 'is_peak_hour']].to_string(index=False))
+        print(df_final.head()[['day_of_week', 'hour', 'minute', 'is_peak_hour']].to_string(index=False))
         
         print("\n✓ ETL completed successfully")
 

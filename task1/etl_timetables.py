@@ -4,42 +4,33 @@ import xml.etree.ElementTree as ET
 from datetime import datetime
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
+from db_config import get_database_url
 
-# --- Configuration ---
-DB_USER = "postgres"
-DB_PASS = "123456"
-DB_HOST = "127.0.0.1"
-DB_PORT = "5432"
-DB_NAME = "dia_db"
-DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+DATABASE_URL = get_database_url()
 
 # Path to the dataset root
 DATA_FOLDER = "dataset"
 TIMETABLE_DIR = os.path.join(DATA_FOLDER, "timetables")
 
-# --- Manual Overrides (XML Name -> JSON Name) ---
+# Map cases that Fuzzy matching cannot solve.
 MANUAL_XML_TO_JSON = {
-    "Berlin Attilastr.": "Attilastraße",
-    "Berlin Storkower Str": "Storkower Straße",
-    "Berlin Feuerbachstr.": "Feuerbachstraße",
-    "Berlin Poelchaustr.": "Poelchaustraße",
-    "Berlin Messe Nord/ZOB (Witzleben)": "Messe Nord / ZOB",
-    "Berlin Sundgauer Str": "Sundgauer Straße",
+    # 1. Simply because it is too short for fuzzy match (Hbf vs Hauptbahnhof)
     "Berlin Hbf": "Berlin Hauptbahnhof",
-    "Berlin Yorckstr.(S1)": "Yorckstraße",
+    # 2. Distinct stations with same base name
+    "Berlin Yorckstr.(S1)": "Yorckstraße (Großgörschenstraße)",
     "Berlin Yorckstr.(S2)": "Yorckstraße"
 }
 
-# --- Database Setup ---
+# Database Setup
 engine = create_engine(DATABASE_URL)
 Session = sessionmaker(bind=engine)
 
-# --- Caching ---
+# Caching
 station_cache = {}  # { 'XML_Name': station_id }
 train_cache = set() # { 'train_id' }
 time_cache = {}     # { datetime_obj: time_id }
 
-# --- Helper Functions ---
+# Helper Functions
 
 def parse_db_timestamp(ts_string):
     """Parses YYMMDDHHMM strings from XML attributes."""
@@ -52,56 +43,65 @@ def parse_folder_timestamp(folder_name):
     return datetime.strptime(folder_name, '%y%m%d%H%M')
 
 def get_station_id(session, xml_name):
-    """Resolves XML station name to DB station_id."""
+    """
+    Resolves XML station name to DB station_id.
+    Strategy:
+    1. Check Cache.
+    2. Check Manual Map (for special cases like Yorckstr).
+    3. Clean Name (Remove 'Berlin ' prefix).
+    4. Exact Match (on Clean Name).
+    5. Fuzzy Match (on Clean Name).
+    """
+    # 1. Check Cache
     if xml_name in station_cache:
         return station_cache[xml_name]
     
-    search_name = MANUAL_XML_TO_JSON.get(xml_name, xml_name)
-    
-    # Exact Match
+    # 2. Check Manual Overrides first
+    if xml_name in MANUAL_XML_TO_JSON:
+        target_name = MANUAL_XML_TO_JSON[xml_name]
+        # Fetch ID for the manual target
+        query = text("SELECT station_id FROM DimStation WHERE station_name = :name")
+        res = session.execute(query, {"name": target_name}).scalar_one_or_none()
+        if res:
+            station_cache[xml_name] = res
+            return res
+        else:
+            print(f"⚠ Critical: Manual mapping '{target_name}' not found in DB!")
+            return None
+
+    # 3. Cleaning: Remove "Berlin " prefix if present
+    if xml_name.startswith("Berlin "):
+        search_name = xml_name[7:].strip() # Remove first 7 chars ("Berlin ")
+    else:
+        search_name = xml_name
+
+    # 3. Try Exact Match (Fastest) using Clean Name
+    # e.g. If XML is "Berlin Alexanderplatz", search_name is "Alexanderplatz", which hits exactly.
     query_exact = text("SELECT station_id FROM DimStation WHERE station_name = :name")
     res = session.execute(query_exact, {"name": search_name}).scalar_one_or_none()
     
+    # Exact Match Found
     if res:
         station_cache[xml_name] = res
         return res
 
-    # Fuzzy Match
+    # 4. Fuzzy Match (Fallback) using pg_trgm similarity
+    # e.g. "Attilastr." (Clean XML) vs "Attilastraße" (DB) -> High Similarity
     query_fuzzy = text(f"""
         SELECT station_id
         FROM DimStation
-        WHERE similarity(station_name, :xml_name) > 0.4
-        ORDER BY similarity(station_name, :xml_name) DESC
+        WHERE similarity(station_name, :search_name) > 0.4
+        ORDER BY similarity(station_name, :search_name) DESC
         LIMIT 1;
     """)
     
-    res = session.execute(query_fuzzy, {"xml_name": xml_name}).scalar_one_or_none()
+    res = session.execute(query_fuzzy, {"search_name": search_name}).scalar_one_or_none()
     
     if res:
         station_cache[xml_name] = res
         return res
     
-    return None
-
-def get_time_id(session, dt_obj):
-    """Retrieves time_id from DimTime."""
-    if dt_obj in time_cache:
-        return time_cache[dt_obj]
-    
-    query = text("""
-        SELECT time_id FROM DimTime 
-        WHERE date = :d AND hour = :h AND minute = :m
-    """)
-    
-    res = session.execute(query, {
-        "d": dt_obj.date(),
-        "h": dt_obj.hour,
-        "m": dt_obj.minute
-    }).scalar_one_or_none()
-    
-    if res:
-        time_cache[dt_obj] = res
-        return res
+    print("⚠ No match for station!", xml_name)
     return None
 
 def ensure_train_exists(session, category, number, owner):
@@ -127,13 +127,33 @@ def ensure_train_exists(session, category, number, owner):
     train_cache.add(train_id)
     return train_id
 
-# --- Main Processing Logic ---
+def get_time_id(session, dt_obj):
+    """Fetches time_id from DimTime for given datetime object."""
+    if dt_obj in time_cache:
+        return time_cache[dt_obj]
+    
+    query = text("""
+        SELECT time_id FROM DimTime 
+        WHERE date = :d AND hour = :h AND minute = :m
+    """)
+    res = session.execute(query, {
+        "d": dt_obj.date(),
+        "h": dt_obj.hour,
+        "m": dt_obj.minute
+    }).scalar_one_or_none()
+    
+    if res:
+        time_cache[dt_obj] = res
+        return res
+    return None
+
+# Main Processing Logic
 
 def process_timetables():
     print("🚀 Starting Timetable Ingestion...")
     
     with engine.begin() as conn:
-        conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm")) # Ensure pg_trgm is available
 
     session = Session()
     
@@ -159,7 +179,7 @@ def process_timetables():
                 
             time_fk = get_time_id(session, snapshot_dt)
             if not time_fk:
-                print(f"⚠ Warning: Skipping folder {folder_name} (Time ID not found)")
+                print(f"⚠ Warning: Skipping folder {folder_name} (Time ID not found)") # Outside time dimension range
                 continue
 
             xml_files = glob.glob(os.path.join(folder_path, "*_timetable.xml"))
@@ -172,9 +192,9 @@ def process_timetables():
                     
                     xml_station_name = root.attrib.get('station')
                     if not xml_station_name:
-                        # print(f"⚠ Skipping {os.path.basename(xml_file)}: Missing 'station' attribute.")
                         continue
 
+                    # Resolve Station ID
                     station_fk = get_station_id(session, xml_station_name)
                     if not station_fk:
                         print(f"⚠ Skipping {os.path.basename(xml_file)}: Unresolvable station '{xml_station_name}'")
@@ -190,10 +210,9 @@ def process_timetables():
                         t_num = tl.attrib.get('n')
                         t_owner = tl.attrib.get('o')
 
-                        # --- SKIP BUSES ---
+                        # SKIP BUSES
                         if t_cat == "Bus": 
                             continue
-                        # ------------------------------
                         
                         train_fk = ensure_train_exists(session, t_cat, t_num, t_owner)
                         
@@ -207,7 +226,7 @@ def process_timetables():
                                 "is_arrival": True,
                                 "planned_platform": ar.attrib.get('pp'),
                                 "planned_time": parse_db_timestamp(ar.attrib.get('pt')),
-                                "is_canceled": ar.attrib.get('c') == 'c'
+                                "is_canceled": ar.attrib.get('cs') == 'c'
                             })
 
                         dp = s_tag.find('dp')
@@ -220,7 +239,7 @@ def process_timetables():
                                 "is_arrival": False,
                                 "planned_platform": dp.attrib.get('pp'),
                                 "planned_time": parse_db_timestamp(dp.attrib.get('pt')),
-                                "is_canceled": dp.attrib.get('c') == 'c'
+                                "is_canceled": dp.attrib.get('cs') == 'c'
                             })
                             
                 except Exception as e:

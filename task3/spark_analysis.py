@@ -1,14 +1,13 @@
-import sys
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, avg, count, hour, lit
+from pyspark.sql.functions import col, avg, hour
+
+INPUT_FOLDER = "dataset/parquet_out"
 
 # --- Configuration ---
 spark = SparkSession.builder \
     .appName("BerlinTransportAnalysis") \
     .master("local[*]") \
     .getOrCreate()
-
-INPUT_FOLDER = "dataset/parquet_out"
 
 def run_analysis():
     print("📂 Loading Parquet Data...")

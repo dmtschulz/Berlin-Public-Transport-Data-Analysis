@@ -4,21 +4,12 @@ import heapq
 from collections import defaultdict, deque
 from datetime import datetime, timedelta
 from sqlalchemy import create_engine, text
+from db_config import get_database_url
 
 # Add parent directory to path to import db_config
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-try:
-    from db_config import get_database_url 
-    DATABASE_URL = get_database_url()
-except ImportError:
-    # Fallback
-    DB_USER = "postgres"
-    DB_PASS = "123456"
-    DB_HOST = "127.0.0.1"
-    DB_PORT = "5432"
-    DB_NAME = "dia_db"
-    DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+DATABASE_URL = get_database_url()
 
 # --- Graph Data Structures ---
 

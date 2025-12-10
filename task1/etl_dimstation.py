@@ -1,24 +1,18 @@
 import pandas as pd
 import json
 from sqlalchemy import create_engine, text
-import sys # For checking Python version for Int64
+from db_config import get_database_url
 
-# --- Configuration ---
-DB_USER = "postgres"
-DB_PASS = "123456"
-DB_HOST = "127.0.0.1"
-DB_PORT = "5432"
-DB_NAME = "dia_db"
-DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+DATABASE_URL = get_database_url()
 
 JSON_FILE_NAME = "dataset/station_data.json"
 
-# --- Core Dimension Loading Logic ---
+# Core Dimension Loading Logic
 
 def extract_station_data(station):
     """
     Extracts and flattens required fields from a single station JSON object.
-    Uses JSON as the authoritative source for metadata.
+    Uses JSON as the authoritative (true) source for metadata.
     """
     
     # Find main EVA number entry
@@ -37,12 +31,8 @@ def extract_station_data(station):
     # Coordinates are nested under geographicCoordinates
     coords = main_eva.get('geographicCoordinates', {}).get('coordinates', [None, None])
     
-    # Skipping the duplicate Yorckstraße entry based on your previous logic
     zipcode = station.get('mailingAddress', {}).get('zipcode')
     station_name = station.get('name')
-
-    if station_name == "Yorckstraße" and zipcode == "10827":
-        return None
     
     # Ensure has_wifi is Boolean for the database
     has_wifi = station.get('hasWiFi')
@@ -63,7 +53,7 @@ def extract_station_data(station):
         'has_wifi': has_wifi
     }
 
-# --- Main Execution ---
+# Main Execution
 
 def load_dim_station_pipeline():
     """Main ETL pipeline to load DimStation from JSON."""
@@ -96,13 +86,13 @@ def load_dim_station_pipeline():
         
         # Use TRUNCATE CASCADE to safely clear the DimStation table
         with engine.begin() as conn:
-            # We also enable the pg_trgm extension here, as it's needed for the next step's fuzzy search.
+            # Enable the pg_trgm extension here, as it's needed for the next step's fuzzy search.
             conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
             print("Clearing existing DimStation data via TRUNCATE CASCADE...")
             conn.execute(text("TRUNCATE TABLE dimstation CASCADE"))
         
         # Load DimStation (Clean JSON names)
-        print(f"Loading {len(df)} clean stations into DimStation...")
+        print(f"Loading {len(df)} stations into DimStation...")
         df.to_sql('dimstation', engine, if_exists='append', index=False)
         
         print("\n✅ DimStation populated successfully!")

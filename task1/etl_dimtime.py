@@ -35,9 +35,9 @@ def load_dim_time():
     # Weekend: Saturday (5) or Sunday (6) in 0-indexed dayofweek
     df['is_weekend'] = df['datetime'].dt.dayofweek >= 5
 
-    # Peak hours: 07:00:00 to 09:00:00 AND 17:00:00 to 19:00:00
-    peak_morning = (df['hour'] >= 7) & (df['hour'] <= 9)
-    peak_evening = (df['hour'] >= 17) & (df['hour'] <= 19)
+    # Peak hours: 07:00:00 to 08:59:59 AND 17:00:00 to 18:59:59
+    peak_morning = (df['hour'] >= 7) & (df['hour'] < 9)
+    peak_evening = (df['hour'] >= 17) & (df['hour'] < 19)
     df['is_peak_hour'] = peak_morning | peak_evening
     
     # Resetting the sequential time_id if we want it to be a surrogate key starting from 1

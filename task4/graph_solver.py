@@ -1,13 +1,8 @@
-import os
-import sys
 import heapq
 from collections import defaultdict, deque
-from datetime import datetime, timedelta
+from datetime import datetime
 from sqlalchemy import create_engine, text
 from db_config import get_database_url
-
-# Add parent directory to path to import db_config
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 DATABASE_URL = get_database_url()
 
@@ -31,7 +26,7 @@ class TransportGraph:
         self.name_to_id[s_name] = s_id
 
     def add_connection(self, u, v, dep_time, arr_time, train_id):
-        # 1. Add to Static Graph (undirected or directed? trains usually go both ways, but we treat as directed)
+        # 1. Add to Static Graph (trains usually go both ways, but we treat as directed)
         self.adjacency[u].add(v)
         
         # 2. Add to Schedule
@@ -43,15 +38,19 @@ class TransportGraph:
         for u in self.schedule:
             self.schedule[u].sort(key=lambda x: x[0])
 
-# --- Algorithms ---
+# Algorithms
 
 def bfs_shortest_hops(graph, start_name, end_name):
     """
     Task 4.1: Shortest path in terms of number of stops (hops).
     Ignores time, just looks at connectivity.
     """
-    if start_name not in graph.name_to_id or end_name not in graph.name_to_id:
-        return None, "Station not found"
+    if start_name not in graph.name_to_id:
+        print(f"Error: Station '{start_name}' not found.")
+        return None
+    if end_name not in graph.name_to_id:
+        print(f"Error: Station '{end_name}' not found.")
+        return None
 
     start_node = graph.name_to_id[start_name]
     end_node = graph.name_to_id[end_name]
@@ -126,7 +125,7 @@ def earliest_arrival_search(graph, start_name, end_name, departure_time_str):
 
     return None, "No connection found"
 
-# --- Data Loading ---
+# Data Loading
 
 def build_graph_from_db():
     print("⏳ Building Graph from Database...")
@@ -135,13 +134,13 @@ def build_graph_from_db():
     
     with engine.connect() as conn:
         # 1. Load Stations
-        print("   Loading Stations...")
+        print("\tLoading Stations...")
         res = conn.execute(text("SELECT station_id, station_name FROM DimStation"))
         for row in res:
             graph.add_station(row[0], row[1])
             
         # 2. Load Connections (Edges)
-        # We fetch a subset of data (e.g., 2-3 days) to keep memory usage low for the demo.
+        # We fetch a subset of data (2-3 days) to keep memory usage low for the demo.
         # Query logic: Join Fact table to itself to find "Sequence" (Dep at A -> Arr at B)
         # We rely on train_id and ordering by time.
         print("   Loading Schedule (Sep 05 - Sep 07)...")
@@ -187,7 +186,7 @@ def build_graph_from_db():
         graph.sort_schedule()
         return graph
 
-# --- Main Runner ---
+# Main Runner
 
 if __name__ == "__main__":
     berlin_graph = build_graph_from_db()

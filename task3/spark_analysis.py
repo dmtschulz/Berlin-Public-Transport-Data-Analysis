@@ -3,7 +3,7 @@ from pyspark.sql.functions import col, avg, hour
 
 INPUT_FOLDER = "dataset/parquet_out"
 
-# --- Configuration ---
+# Configuration
 spark = SparkSession.builder \
     .appName("BerlinTransportAnalysis") \
     .master("local[*]") \
@@ -23,7 +23,7 @@ def run_analysis():
     print(f"\n--- Task 3.2: Average Daily Delay for {target_station} ---")
     
     # Logic: Filter Station -> Group by Date -> Avg(Delay)
-    # We focus on Arrivals for delay metrics usually, or both.
+    # We focus on Arrivals for delay metrics usually or both.
     daily_delay = df.filter(col("station_name") == target_station) \
                     .filter(col("is_canceled") == False) \
                     .groupBy("event_date") \

@@ -43,7 +43,7 @@ if __name__ == "__main__":
     test_lon = 13.4050
     # Choose a snapshot time that definitely exists in DimTime
     # (e.g., one of the first folders)
-    test_date = "2025-10-12"
+    test_date = "2025-10-03"
     test_hour = 12
 
     # Execute all tasks

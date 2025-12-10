@@ -8,27 +8,23 @@ from pyspark.sql import functions as F
 DATA_FOLDER = "dataset"
 OUTPUT_FOLDER = "dataset/parquet_out"
 
-# --- Configuration ---
+# Configuration
 spark = SparkSession.builder \
     .appName("BerlinTransportETL") \
     .config("spark.driver.memory", "4g") \
     .master("local[*]") \
     .getOrCreate()
 
-# --- Station Name Mapping (Consistency with Task 1) ---
+# Manual Overrides (Reduced List). Consistent with etl_timetables.py..
 MANUAL_XML_TO_JSON = {
-    "Berlin Attilastr.": "Attilastraße",
-    "Berlin Storkower Str": "Storkower Straße",
-    "Berlin Feuerbachstr.": "Feuerbachstraße",
-    "Berlin Poelchaustr.": "Poelchaustraße",
-    "Berlin Messe Nord/ZOB (Witzleben)": "Messe Nord / ZOB",
-    "Berlin Sundgauer Str": "Sundgauer Straße",
+    # 1. Too short for fuzzy match
     "Berlin Hbf": "Berlin Hauptbahnhof",
-    "Berlin Yorckstr.(S1)": "Yorckstraße",
+    # 2. Distinct Platforms (S1/S2 logic)
+    "Berlin Yorckstr.(S1)": "Yorckstraße (Großgörschenstraße)",
     "Berlin Yorckstr.(S2)": "Yorckstraße"
 }
 
-# --- Helper Functions (Run on Worker Nodes) ---
+# Helper Functions (Run on Worker Nodes)
 
 def parse_timestamp(ts_str):
     """Parses YYMMDDHHMM string to datetime object."""
@@ -40,10 +36,19 @@ def parse_timestamp(ts_str):
         return None
 
 def normalize_station_name(raw_name):
-    """Applies manual overrides to match DB schema."""
+    """Applies manual overrides AND strips 'Berlin ' prefix to match DB schema."""
     if not raw_name:
         return None
-    return MANUAL_XML_TO_JSON.get(raw_name, raw_name)
+    
+    # 1. Check Manual Overrides
+    if raw_name in MANUAL_XML_TO_JSON:
+        return MANUAL_XML_TO_JSON[raw_name]
+    
+    # 2. Strip 'Berlin ' Prefix
+    if raw_name.startswith("Berlin "):
+        return raw_name[7:].strip()
+        
+    return raw_name
 
 def parse_xml_content(file_data):
     """
@@ -59,7 +64,7 @@ def parse_xml_content(file_data):
         if not raw_station_name:
             return []
 
-        # --- FIX: Normalize Name ---
+        # Normalize Name
         station_name = normalize_station_name(raw_station_name)
 
         # Determine file type based on filename suffix
@@ -71,19 +76,23 @@ def parse_xml_content(file_data):
             # Identify Train (Timeline ID)
             tl = s_tag.find('tl')
             train_id = None
+            category = 'Unknown' # Default
+
             if tl is not None:
-                # Composite ID: Category + Number
-                c = tl.attrib.get('c', 'Unknown')
+                category = tl.attrib.get('c', 'Unknown')
                 n = tl.attrib.get('n', '0')
-                train_id = f"{c}-{n}"
+                train_id = f"{category}-{n}"
             
-            # --- ARRIVALS ---
+            if category == "Bus":
+                continue
+            
+            # ARRIVALS
             ar = s_tag.find('ar')
             if ar is not None:
                 if is_change_file:
                     # Update Event
                     ct = parse_timestamp(ar.attrib.get('ct'))
-                    canceled = (ar.attrib.get('c') == 'c')
+                    canceled = (ar.attrib.get('cs') == 'c')
                     events.append(((station_name, stop_id, train_id, True), 
                                    {'actual_time': ct, 'is_canceled': canceled, 'type': 'update'}))
                 else:
@@ -92,12 +101,12 @@ def parse_xml_content(file_data):
                     events.append(((station_name, stop_id, train_id, True), 
                                    {'planned_time': pt, 'type': 'plan'}))
 
-            # --- DEPARTURES ---
+            # DEPARTURES
             dp = s_tag.find('dp')
             if dp is not None:
                 if is_change_file:
                     ct = parse_timestamp(dp.attrib.get('ct'))
-                    canceled = (dp.attrib.get('c') == 'c')
+                    canceled = (dp.attrib.get('cs') == 'c')
                     events.append(((station_name, stop_id, train_id, False), 
                                    {'actual_time': ct, 'is_canceled': canceled, 'type': 'update'}))
                 else:
@@ -117,7 +126,7 @@ def merge_events(a, b):
     merged.update(b)
     return merged
 
-# --- Main Pipeline ---
+# Main Pipeline
 
 if __name__ == "__main__":
     print("🚀 Starting Spark ETL Job (With Name Normalization)...")

@@ -1,12 +1,12 @@
 import heapq
 from collections import defaultdict, deque
-from datetime import datetime
+from datetime import datetime, timedelta
 from sqlalchemy import create_engine, text
 from db_config import get_database_url
 
 DATABASE_URL = get_database_url()
 
-# --- Graph Data Structures ---
+# Graph Data Structures
 
 class TransportGraph:
     def __init__(self):
@@ -92,7 +92,7 @@ def earliest_arrival_search(graph, start_name, end_name, departure_time_str):
     # Dictionary to keep track of best arrival time at each station
     min_arrival_times = {start_node: start_time}
     
-    # Limit iterations to prevent infinite loops in cyclic graphs
+    # Limit iterations to prevent infinite loops in cyclic graphs (we have directed graph)
     visited_count = 0 
     
     while pq:
@@ -112,8 +112,8 @@ def earliest_arrival_search(graph, start_name, end_name, departure_time_str):
         if u in graph.schedule:
             for dep_t, arr_t, v, train_id in graph.schedule[u]:
                 
-                # Constraint 1: Can we catch this train? (Departure >= Our Arrival at U)
-                if dep_t >= current_time:
+                # Constraint 1: Can we catch this train? (Departure >= Our Arrival at U + 2 min buffer)
+                if dep_t >= current_time + timedelta(minutes=2):  # +2 min buffer for transfer
                     
                     # Constraint 2: Is this a better arrival time for v?
                     if v not in min_arrival_times or arr_t < min_arrival_times[v]:

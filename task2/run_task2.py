@@ -37,19 +37,22 @@ def run_query(file_path, params=None):
         print(f"Error executing query: {e}")
 
 if __name__ == "__main__":
-    # test_station = "Berlin Hauptbahnhof"
-    test_station = "Alexanderplatz"
+    # Task 2.1 (Given a station name, return its coordinates and identifier.)
+    station_coord = "Alexanderplatz"
+    # Task 2.2 (Given coordinates, find the nearest station.)
     test_lat = 52.5200  # Near Berlin TV Tower
     test_lon = 13.4050
-    # Choose a snapshot time that definitely exists in DimTime
-    test_date = "2025-10-03"
+    # Task 2.3 (Given a timesnapshot, return the total number of canceled trains.)
+    test_date = "2025-09-12"
     test_hour = 12
+    # Task 2.4 (Given a station name, return the average delay of arriving trains over the past month.)
+    station_delay = "Berlin Hauptbahnhof"
 
     # Execute all tasks
-    run_query("task2/query_2_1.sql", {"station_name": test_station})
+    run_query("task2/query_2_1.sql", {"station_name": station_coord})
     run_query("task2/query_2_2.sql", {"input_lat": test_lat, "input_lon": test_lon})
     run_query("task2/query_2_3.sql", {
         "target_date": test_date, 
         "target_hour": test_hour
     })
-    run_query("task2/query_2_4.sql", {"station_name": test_station})
+    run_query("task2/query_2_4.sql", {"station_name": station_delay})

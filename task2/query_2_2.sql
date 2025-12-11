@@ -1,5 +1,5 @@
 -- Task 2.2: Given latitude/longitude, return the name of the closest station.
--- We order by the squared Euclidean distance ((lat-lat)^2 + (lon-lon)^2)
+-- Order by the squared Euclidean distance ((lat-lat)^2 + (lon-lon)^2)
 SELECT 
     station_name,
     latitude,

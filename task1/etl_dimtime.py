@@ -16,10 +16,7 @@ def load_dim_time():
     """
     print("🚉 Starting ETL for DimTime...")
 
-    # --- KEY CHANGE 1: Generate 15-minute intervals ---
-    # We use '15min' frequency. Since timetable changes are at HH:01, HH:16, etc., 
-    # we might need to adjust the generated times later if we only want those specific minutes.
-    # For a comprehensive dimension, 15-minute resolution is a good choice.
+    # Generate 15-minute intervals
     date_range = pd.date_range(start=START_DATE, end=END_DATE, freq='15min')
     df = pd.DataFrame({'datetime': date_range})
 

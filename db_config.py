@@ -1,10 +1,9 @@
-
-# Configure database connection parameters
-DB_USER = "postgres"
-DB_PASS = "123456"
+# Configure database connection parameters (for Docker)
+DB_USER = "dia_user"
+DB_PASS = "dia"
 DB_HOST = "127.0.0.1"
-DB_PORT = "5432"
-DB_NAME = "dia_db"
+DB_PORT = "5434" # The external port defined in docker-compose
+DB_NAME = "db_berlin"
 
 def get_database_url():
     """Constructs and returns the database URL."""

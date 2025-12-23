@@ -13,7 +13,7 @@ WITH UniqueMovements AS (
       AND f.is_arrival = TRUE -- Focusing on Arrival Delay (standard metric)
 )
 SELECT 
-    CAST(AVG(delay_minutes) AS DECIMAL(10, 2)) AS avg_delay_minutes
+    AVG(GREATEST(0, delay_minutes)) AS avg_delay_minutes
 FROM UniqueMovements
 WHERE rn = 1 -- Only take the most recent snapshot for that train
   AND delay_minutes IS NOT NULL; -- Exclude trains with no delay info

@@ -92,7 +92,7 @@ def parse_xml_content(file_data):
                 if is_change_file:
                     # Update Event
                     ct = parse_timestamp(ar.attrib.get('ct'))
-                    canceled = (ar.attrib.get('cs') == 'c')
+                    canceled = (ar.attrib.get('cs') == 'c' and ar.attrib.get('clt') is not None)
                     events.append(((station_name, stop_id, train_id, True), 
                                    {'actual_time': ct, 'is_canceled': canceled, 'type': 'update'}))
                 else:
@@ -106,7 +106,7 @@ def parse_xml_content(file_data):
             if dp is not None:
                 if is_change_file:
                     ct = parse_timestamp(dp.attrib.get('ct'))
-                    canceled = (dp.attrib.get('cs') == 'c')
+                    canceled = (dp.attrib.get('cs') == 'c' and dp.attrib.get('clt') is not None)
                     events.append(((station_name, stop_id, train_id, False), 
                                    {'actual_time': ct, 'is_canceled': canceled, 'type': 'update'}))
                 else:
@@ -154,8 +154,8 @@ if __name__ == "__main__":
         # Calculate Delay (Minutes)
         delay = 0.0
         if pt and at:
-            # Difference in seconds / 60
-            delay = (at - pt).total_seconds() / 60.0
+            # Difference in seconds / 60, take max with 0 to avoid negative delays
+            delay = max(0.0, (at - pt).total_seconds() / 60.0)
         
         # Partition Date
         ref_time = pt if pt else at

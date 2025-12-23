@@ -140,10 +140,11 @@ def process_changes():
                             ct = ar.attrib.get('ct') # Changed Time
                             cp = ar.attrib.get('cp') # Changed Platform
                             c_status = ar.attrib.get('cs') # Cancellation Status
+                            c_time = ar.attrib.get('clt') # Cancellation Time
 
                             if ct or cp or c_status:
                                 actual_time = parse_db_timestamp(ct) if ct else None
-                                
+                                # I do not store cancellation time in FactTrainMovement, only a boolean
                                 update_query = text("""
                                     UPDATE FactTrainMovement
                                     SET 
@@ -163,7 +164,7 @@ def process_changes():
                                 result = session.execute(update_query, {
                                     "actual_time": actual_time,
                                     "actual_platform": cp,
-                                    "is_canceled": (c_status == 'c'),
+                                    "is_canceled": (c_status == 'c' and c_time is not None),
                                     "station_id": station_fk,
                                     "stop_id": stop_id
                                 })
@@ -175,6 +176,7 @@ def process_changes():
                             ct = dp.attrib.get('ct')
                             cp = dp.attrib.get('cp')
                             c_status = dp.attrib.get('cs')
+                            c_time = dp.attrib.get('clt') # Cancellation Time
 
                             if ct or cp or c_status:
                                 actual_time = parse_db_timestamp(ct) if ct else None
@@ -198,7 +200,7 @@ def process_changes():
                                 result = session.execute(update_query, {
                                     "actual_time": actual_time,
                                     "actual_platform": cp,
-                                    "is_canceled": (c_status == 'c'),
+                                    "is_canceled": (c_status == 'c' and c_time is not None),
                                     "station_id": station_fk,
                                     "stop_id": stop_id
                                 })

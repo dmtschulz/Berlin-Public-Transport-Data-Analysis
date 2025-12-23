@@ -216,7 +216,7 @@ def process_timetables():
                         
                         train_fk = ensure_train_exists(session, t_cat, t_num, t_owner)
                         
-                        ar = s_tag.find('ar')
+                        ar = s_tag.find('ar') # arrival
                         if ar is not None:
                             batch_movements.append({
                                 "station_id": station_fk,
@@ -226,10 +226,10 @@ def process_timetables():
                                 "is_arrival": True,
                                 "planned_platform": ar.attrib.get('pp'),
                                 "planned_time": parse_db_timestamp(ar.attrib.get('pt')),
-                                "is_canceled": ar.attrib.get('cs') == 'c'
+                                "is_canceled": ar.attrib.get('cs') == 'c' and ar.attrib.get('clt') is not None
                             })
 
-                        dp = s_tag.find('dp')
+                        dp = s_tag.find('dp') # departure
                         if dp is not None:
                             batch_movements.append({
                                 "station_id": station_fk,
@@ -239,7 +239,7 @@ def process_timetables():
                                 "is_arrival": False,
                                 "planned_platform": dp.attrib.get('pp'),
                                 "planned_time": parse_db_timestamp(dp.attrib.get('pt')),
-                                "is_canceled": dp.attrib.get('cs') == 'c'
+                                "is_canceled": dp.attrib.get('cs') == 'c' and dp.attrib.get('clt') is not None
                             })
                             
                 except Exception as e:

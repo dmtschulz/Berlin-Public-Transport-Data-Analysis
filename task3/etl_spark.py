@@ -155,7 +155,8 @@ if __name__ == "__main__":
         delay = 0.0
         if pt and at:
             # Difference in seconds / 60, take max with 0 to avoid negative delays
-            delay = max(0.0, (at - pt).total_seconds() / 60.0)
+            diff_minutes = (at - pt).total_seconds() / 60.0
+            delay = max(0.0, diff_minutes)
         
         # Partition Date
         ref_time = pt if pt else at

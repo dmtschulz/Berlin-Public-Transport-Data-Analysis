@@ -153,7 +153,7 @@ def process_changes():
                                         is_canceled = CASE WHEN :is_canceled THEN TRUE ELSE is_canceled END,
                                         delay_minutes = CASE 
                                             WHEN :actual_time IS NOT NULL THEN 
-                                                EXTRACT(EPOCH FROM (:actual_time - planned_time)) / 60 
+                                                GREATEST(0, EXTRACT(EPOCH FROM (:actual_time - planned_time)) / 60)
                                             ELSE delay_minutes 
                                         END
                                     WHERE station_id = :station_id 
@@ -189,7 +189,7 @@ def process_changes():
                                         is_canceled = CASE WHEN :is_canceled THEN TRUE ELSE is_canceled END,
                                         delay_minutes = CASE 
                                             WHEN :actual_time IS NOT NULL THEN 
-                                                EXTRACT(EPOCH FROM (:actual_time - planned_time)) / 60 
+                                                GREATEST(0, EXTRACT(EPOCH FROM (:actual_time - planned_time)) / 60)
                                             ELSE delay_minutes 
                                         END
                                     WHERE station_id = :station_id 

@@ -112,8 +112,13 @@ def earliest_arrival_search(graph, start_name, end_name, departure_time_str):
         if u in graph.schedule:
             for dep_t, arr_t, v, train_id in graph.schedule[u]:
                 
-                # Constraint 1: Can we catch this train? (Departure >= Our Arrival at U + 2 min buffer)
-                if dep_t >= current_time + timedelta(minutes=2):  # +2 min buffer for transfer
+                min_departure_needed = current_time
+                # Only add buffer if we are transferring (not at the start)
+                if u != start_node:
+                    min_departure_needed += timedelta(minutes=2)
+                
+                # Check constraint
+                if dep_t >= min_departure_needed:
                     
                     # Constraint 2: Is this a better arrival time for v?
                     if v not in min_arrival_times or arr_t < min_arrival_times[v]:
@@ -131,6 +136,10 @@ def build_graph_from_db():
     print("⏳ Building Graph from Database...")
     graph = TransportGraph()
     engine = create_engine(DATABASE_URL)
+
+    # Store the range for the UI
+    graph.min_date = None
+    graph.max_date = None
     
     with engine.connect() as conn:
         # 1. Load Stations
@@ -140,31 +149,33 @@ def build_graph_from_db():
             graph.add_station(row[0], row[1])
             
         # 2. Load Connections (Edges)
-        # We fetch a subset of data (2-3 days) to keep memory usage low for the demo.
+        # Fetch a subset of data (2-3 days) to keep memory usage low for the demo.
         # Query logic: Join Fact table to itself to find "Sequence" (Dep at A -> Arr at B)
-        # We rely on train_id and ordering by time.
-        print("   Loading Schedule (Sep 05 - Sep 07)...")
+        # Rely on train_id and ordering by time.
+        # Define your range here once so it's easy to change
+        start_bound = '2025-09-03 00:00'
+        end_bound = '2025-09-13 00:00'
+        print(f"   Loading Schedule ({start_bound} - {end_bound})...")
         
-        query = text("""
-            SELECT 
-                f.train_id,
-                f.station_id,
-                f.is_arrival,
-                f.planned_time
+        query = text(f"""
+            SELECT f.train_id, f.station_id, f.is_arrival, f.planned_time
             FROM FactTrainMovement f
-            WHERE f.planned_time >= '2025-09-05 00:00' 
-              AND f.planned_time < '2025-09-08 00:00'
+            WHERE f.planned_time >= '{start_bound}' AND f.planned_time < '{end_bound}'
             ORDER BY f.train_id, f.planned_time
         """)
         
         rows = conn.execute(query).fetchall()
+
+        if rows:
+            # Track the actual date range found in the data
+            graph.min_date = rows[0][3]
+            graph.max_date = rows[-1][3]
         
         # Process sequential rows to build edges
         # Row N (Departure) -> Row N+1 (Arrival)
         count = 0
         for i in range(len(rows) - 1):
-            curr_row = rows[i]
-            next_row = rows[i+1]
+            curr_row , next_row = rows[i], rows[i+1]
             
             # Check if it's the same train
             if curr_row[0] == next_row[0]:
@@ -185,43 +196,82 @@ def build_graph_from_db():
         print(f"   Graph Built! Loaded {count} connections.")
         graph.sort_schedule()
         return graph
+    
+def validate_station(graph, prompt, allow_quit=True):
+    """Validate station input with optional quit."""
+    while True:
+        station = input(prompt).strip()
+        if allow_quit and station.lower() == 'quit':
+            return None
+        if station in graph.name_to_id:
+            return station
+        print(f"❌ Error: Station '{station}' not found. Please check the spelling.")
 
 # Main Runner
 
 if __name__ == "__main__":
+    # 1. Build the graph only ONCE
     berlin_graph = build_graph_from_db()
-    
-    # --- CONFIGURATION ---
-    source = "Alexanderplatz" 
-    target = "Berlin-Spandau"
-    
-    start_time_str = "2025-09-05 08:00"
-    
-    print("\n" + "="*50)
-    print(f"TESTING ROUTE: {source} -> {target}")
-    print("="*50)
 
-    # Task 4.1
-    print("\n--- Task 4.1: Shortest Path (Hops) ---")
-    path = bfs_shortest_hops(berlin_graph, source, target)
-    if path:
-        print(f"Path found ({len(path)-1} hops):")
-        print(" -> ".join(path))
-    else:
-        print(f"Could not find path from '{source}' to '{target}'.")
-        print("Tip: Check if the station names match exactly what is in the 'DimStation' table.")
-
-    # Task 4.2
-    print(f"\n--- Task 4.2: Earliest Arrival (Dep: {start_time_str}) ---")
-    route, arrival = earliest_arrival_search(berlin_graph, source, target, start_time_str)
+    default_time = "2025-09-03 08:00"
     
-    if route:
-        print(f"Arrival Time: {arrival}")
-        print("Itinerary:")
-        for step in route:
-            if len(step) == 3:
-                print(f"  Dep {step[1]} from {step[0]} [Train: {step[2]}]")
+    while True:
+        print("\n" + "="*50)
+        print("TRANSIT ROUTE FINDER (Type 'quit' to exit)")
+        print("="*50)
+        
+        # 1. Source Validation
+        source = validate_station(berlin_graph, "Enter Source Station: ")
+        if source is None:
+            break
+        
+        # 2. Target Validation
+        target = validate_station(berlin_graph, "Enter Target Station: ")
+        if target is None:
+            break
+        
+        # 3. Date and Time Input with Default
+        prompt = f"Enter Departure Time [YYYY-MM-DD HH:MM]: "
+        start_time_str = input(prompt).strip()
+        
+        if start_time_str.lower() == 'quit': break
+        if not start_time_str: # If user just pressed Enter
+            start_time_str = default_time
+
+        # Logic check: is the requested time within our graph's range?
+        try:
+            req_time = datetime.strptime(start_time_str, "%Y-%m-%d %H:%M")
+            if req_time < berlin_graph.min_date or req_time > berlin_graph.max_date:
+                print(f"⚠️ Warning: {start_time_str} is outside the loaded graph range.")
+                print(f"   Results may be empty or incomplete.")
+        except ValueError:
+            print("❌ Invalid format. Please use YYYY-MM-DD HH:MM")
+            continue
+
+        print(f"\nSearching for route from {source} to {target}...")
+
+        # Task 4.1: Shortest Hops
+        print("\n--- Task 4.1: Shortest Path (Hops) ---")
+        path = bfs_shortest_hops(berlin_graph, source, target)
+        if path:
+            print(f"Path found ({len(path)-1} hops):")
+            print(" -> ".join(path))
+
+        # Task 4.2: Earliest Arrival
+        print(f"\n--- Task 4.2: Earliest Arrival ---")
+        try:
+            route, arrival = earliest_arrival_search(berlin_graph, source, target, start_time_str)
+            if route:
+                print(f"✅ Success! Earliest Arrival: {arrival}")
+                print("Itinerary:")
+                for step in route:
+                    if len(step) == 3:
+                        print(f"  Dep {step[1]} from {step[0]} [Train: {step[2]}]")
+                    else:
+                        print(f"  Arr {step[1]} at   {step[0]}")
             else:
-                print(f"  Arr {step[1]} at   {step[0]}")
-    else:
-        print(f"Result: {arrival}")
+                print(f"❌ Result: {arrival}")
+        except ValueError:
+            print("❌ Invalid date format. Please use YYYY-MM-DD HH:MM")
+
+    print("\nShutting down. Goodbye!")

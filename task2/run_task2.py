@@ -39,14 +39,21 @@ def run_query(file_path, params=None):
 if __name__ == "__main__":
     # Task 2.1 (Given a station name, return its coordinates and identifier.)
     station_coord = "Alexanderplatz"
+    print(f"Task 2.1 - Query station: {station_coord}")
+    
     # Task 2.2 (Given coordinates, find the nearest station.)
     test_lat = 52.5200  # Near Berlin TV Tower
     test_lon = 13.4050
+    print(f"Task 2.2 - Query coordinates: lat={test_lat}, lon={test_lon}")
+    
     # Task 2.3 (Given a timesnapshot, return the total number of canceled trains.)
     test_date = "2025-09-12"
     test_hour = 12
+    print(f"Task 2.3 - Query date/time: {test_date} at hour {test_hour}")
+    
     # Task 2.4 (Given a station name, return the average delay of arriving trains over the past month.)
     station_delay = "Berlin Hauptbahnhof"
+    print(f"Task 2.4 - Query station: {station_delay}")
 
     # Execute all tasks
     run_query("task2/query_2_1.sql", {"station_name": station_coord})
